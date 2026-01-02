@@ -1,0 +1,104 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# PyCharm
+.idea/
+*.iml
+out/
+*.ipr
+*.iws
+
+# Logs
+*.log
+logs/
+
+# Data files
+*.csv
+*.json
+*.png
+*.jpg
+*.jpeg
+debug_*.json
+twelvedata_debug.json
+aapl_sample.csv
+twelvedata_sample.csv
+test_chart*.png
+chart_*.png
+
+# API keys and secrets
+.env
+.env.local
+.secrets
+secrets.ini
+config.ini
+credentials.json
+*.key
+*.pem
+
+# Cache
+.cache/
+.yfinance/
+
+# Temp files
+*.tmp
+*.temp
+
+# Test outputs
+test_output/
+coverage/
+htmlcov/
+.tox/
+.pytest_cache/
+.coverage
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+[Tt]humbs.db
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+.env
