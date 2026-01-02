@@ -1,261 +1,172 @@
-import yfinance as yf
 import time
-import concurrent.futures
 import threading
-from typing import List, Dict, Optional, Tuple
+import concurrent.futures
+from typing import Dict, List, Optional
+
+import yfinance as yf
 from services.universe import load_sp500
 
+UNIVERSE = load_sp500()[:50]
 
-UNIVERSE = load_sp500()
+MAX_WORKERS = 8
+CACHE_TTL = 300  # seconds
 
 
-_symbol_cache: Dict[str, Tuple[Optional[float], float]] = {}
-_symbol_cache_ttl = 300
-
+_history_cache: Dict[str, Dict] = {}
+_history_cache_time: Dict[str, float] = {}
 
 _result_cache: Dict[str, Dict] = {}
-_RESULT_CACHE_TTL = 300
+_result_cache_time: Dict[str, float] = {}
+
+_cache_lock = threading.Lock()
+
+def _fetch_history(symbol: str):
+    """
+    Fetch 1Y historical data for a symbol.
+    One network request per symbol.
+    """
+    ticker = yf.Ticker(symbol)
+    return ticker.history(period="1y", auto_adjust=True)
 
 
-_last_request_time = 0
-_MIN_REQUEST_INTERVAL = 1.0  # Increased to 1 second
+def _get_history_cached(symbol: str):
+    now = time.time()
+
+    with _cache_lock:
+        if symbol in _history_cache:
+            if now - _history_cache_time[symbol] < CACHE_TTL:
+                return _history_cache[symbol]
+
+    hist = _fetch_history(symbol)
+
+    with _cache_lock:
+        _history_cache[symbol] = hist
+        _history_cache_time[symbol] = now
+
+    return hist
 
 
+def _pct_change(first: float, last: float) -> Optional[float]:
+    if first <= 0:
+        return None
+    return round(((last - first) / first) * 100, 2)
 
 
-def _rate_limited_request():
-   global _last_request_time
-   current_time = time.time()
-   elapsed = current_time - _last_request_time
+def compute_performance(hist) -> Dict[str, Optional[float]]:
+    if hist.empty or len(hist) < 2:
+        return {}
 
+    close = hist["Close"]
 
-   if elapsed < _MIN_REQUEST_INTERVAL:
-       time.sleep(_MIN_REQUEST_INTERVAL - elapsed)
-
-
-   _last_request_time = time.time()
-
-
-
-
-def _get_change_single(symbol: str, period: str) -> Optional[float]:
-   try:
-       ticker = yf.Ticker(symbol)
-       _rate_limited_request()
-
-
-       # FOR YFINANCE 0.2.18 - DIFFERENT PARAMETERS
-       if period == "24h":
-           # For 24h change, get 2 days and compare yesterday to today
-           hist = ticker.history(period="2d")
-       else:
-           period_map = {
-               "7d": "5d",  # yfinance 0.2.18 uses "5d" not "7d"
-               "30d": "1mo",
-               "3mo": "3mo",
-               "1y": "1y"
-           }
-           hist = ticker.history(period=period_map.get(period, "1mo"))
-
-
-       if hist.empty or len(hist) < 2:
-           return None
-
-
-       if period == "24h":
-           if len(hist) >= 2:
-               # Compare yesterday's close to today's close
-               first = hist["Close"].iloc[-2]
-               second = hist["Close"].iloc[-1]
-           else:
-               return None
-       else:
-           first = hist["Close"].iloc[0]
-           second = hist["Close"].iloc[-1]
-
-
-       if first > 0:
-           return round(((second - first) / first) * 100, 2)
-       return None
-
-
-   except Exception as e:
-       print(f"Error fetching {symbol}: {e}")
-       return None
+    return {
+        "24h": _pct_change(close.iloc[-2], close.iloc[-1]),
+        "7d": _pct_change(close.iloc[-5], close.iloc[-1]) if len(close) >= 5 else None,
+        "30d": _pct_change(close.iloc[-22], close.iloc[-1]) if len(close) >= 22 else None,
+        "3mo": _pct_change(close.iloc[-66], close.iloc[-1]) if len(close) >= 66 else None,
+        "1y": _pct_change(close.iloc[0], close.iloc[-1]),
+    }
 
 
 
+def _fetch_all_symbols(symbols: List[str]) -> List[Dict]:
+    results = []
 
-def _get_change_cached(symbol: str, period: str) -> Optional[float]:
-   cache_key = f"{symbol}:{period}"
-   now = time.time()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {
+            executor.submit(_get_history_cached, symbol): symbol
+            for symbol in symbols
+        }
 
+        for future in concurrent.futures.as_completed(futures):
+            symbol = futures[future]
+            try:
+                hist = future.result()
+                perf = compute_performance(hist)
 
-   cached = _symbol_cache.get(cache_key)
-   if cached and (now - cached[1] < _symbol_cache_ttl):
-       return cached[0]
+                if perf:
+                    results.append({
+                        "symbol": symbol,
+                        "performance": perf
+                    })
 
+            except Exception as e:
+                print(f"{symbol} failed: {e}")
 
-   change = _get_change_single(symbol, period)
-   _symbol_cache[cache_key] = (change, now)
-   return change
-
-
-
-
-def _get_changes_parallel(symbols: List[str], period: str, max_workers: int = 5) -> List[Dict]:
-   """SLOWER but more reliable"""
-   results = []
-
-
-   # Process one by one with longer delays
-   for symbol in symbols[:50]:  # Limit to 50 symbols
-       change = _get_change_cached(symbol, period)
-       if change is not None:
-           results.append({"symbol": symbol, "change": change})
-       time.sleep(0.5)  # Half second between requests
-
-
-   return results
-
-
+    return results
 
 
 def best_performers(period: str, limit: int = 5) -> List[Dict]:
-   result_key = f"best:{period}:{limit}"
-   now = time.time()
+    key = f"best:{period}:{limit}"
+    now = time.time()
 
+    if key in _result_cache and now - _result_cache_time[key] < CACHE_TTL:
+        return _result_cache[key]
 
-   cached_result = _result_cache.get(result_key)
-   if cached_result and (now - cached_result["timestamp"] < _RESULT_CACHE_TTL):
-       return cached_result["data"]
+    data = _fetch_all_symbols(UNIVERSE)
 
+    filtered = [
+        {"symbol": d["symbol"], "change": d["performance"].get(period)}
+        for d in data
+        if d["performance"].get(period) is not None
+    ]
 
-   # Only check top 50 symbols for now
-   symbols_to_check = UNIVERSE[:50]
-   results = _get_changes_parallel(symbols_to_check, period)
+    result = sorted(filtered, key=lambda x: x["change"], reverse=True)[:limit]
 
+    _result_cache[key] = result
+    _result_cache_time[key] = now
 
-   if not results:
-       return []
-
-
-   sorted_results = sorted(results, key=lambda x: x["change"], reverse=True)[:limit]
-
-
-   _result_cache[result_key] = {
-       "data": sorted_results,
-       "timestamp": now
-   }
-
-
-   return sorted_results
-
-
+    return result
 
 
 def worst_performers(period: str, limit: int = 5) -> List[Dict]:
-   result_key = f"worst:{period}:{limit}"
-   now = time.time()
+    key = f"worst:{period}:{limit}"
+    now = time.time()
 
+    if key in _result_cache and now - _result_cache_time[key] < CACHE_TTL:
+        return _result_cache[key]
 
-   cached_result = _result_cache.get(result_key)
-   if cached_result and (now - cached_result["timestamp"] < _RESULT_CACHE_TTL):
-       return cached_result["data"]
+    data = _fetch_all_symbols(UNIVERSE)
 
+    filtered = [
+        {"symbol": d["symbol"], "change": d["performance"].get(period)}
+        for d in data
+        if d["performance"].get(period) is not None
+    ]
 
-   symbols_to_check = UNIVERSE[:50]
-   results = _get_changes_parallel(symbols_to_check, period)
+    result = sorted(filtered, key=lambda x: x["change"])[:limit]
 
+    _result_cache[key] = result
+    _result_cache_time[key] = now
 
-   if not results:
-       return []
-
-
-   sorted_results = sorted(results, key=lambda x: x["change"])[:limit]
-
-
-   _result_cache[result_key] = {
-       "data": sorted_results,
-       "timestamp": now
-   }
-
-
-   return sorted_results
-
-
-
-
-def cached_best_performers(period: str, limit: int = 5) -> List[Dict]:
-   return best_performers(period, limit)
-
-
-
-
-def cached_worst_performers(period: str, limit: int = 5) -> List[Dict]:
-   return worst_performers(period, limit)
-
-
+    return result
 
 
 def get_stock_performance(symbol: str) -> Optional[Dict]:
-   try:
-       ticker = yf.Ticker(symbol)
-       _rate_limited_request()
+    try:
+        hist = _get_history_cached(symbol)
+        if hist.empty:
+            return None
 
+        close = hist["Close"].iloc[-1]
 
-       # DON'T use .info - it causes 429 errors
-       # Instead, get price from history
-       hist = ticker.history(period="2d")
-       if hist.empty:
-           return None
+        return {
+            "symbol": symbol.upper(),
+            "current_price": round(float(close), 2),
+            "performances": compute_performance(hist)
+        }
 
-
-       current_price = hist["Close"].iloc[-1]
-
-
-       performances = {}
-       periods = ["24h", "7d", "30d", "3mo", "1y"]
-
-
-       for period in periods:
-           change = _get_change_cached(symbol, period)
-           performances[period] = change
-
-
-       return {
-           "symbol": symbol.upper(),
-           "name": symbol,  # Can't get real name without .info
-           "current_price": current_price,
-           "performances": performances
-       }
-   except Exception as e:
-       print(f"Error getting stock performance for {symbol}: {e}")
-       return None
-
-
-
+    except Exception as e:
+        print(f"{symbol} error: {e}")
+        return None
 
 def start_cache_warming():
-   """Simplified warming - just a few symbols"""
+    def warm():
+        popular = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"]
+        for s in popular:
+            _get_history_cached(s)
+
+    t = threading.Thread(target=warm, daemon=True)
+    t.start()
 
 
-   def warm_task():
-       popular_symbols = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"]
-       periods = ["24h", "7d", "30d"]
-
-
-       for symbol in popular_symbols:
-           for period in periods:
-               _get_change_cached(symbol, period)
-               time.sleep(2)  # Long delay to avoid bans
-
-
-   thread = threading.Thread(target=warm_task, daemon=True)
-   thread.start()
-   return thread
-
-
-
-
-_warming_thread = start_cache_warming()
+start_cache_warming()

@@ -232,7 +232,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         lines = []
-        lines.append(f"<b>{stock_data['symbol']} - {stock_data['name']}</b>")
+        lines.append(f"<b>{stock_data['symbol']}</b>")
 
         if stock_data['current_price']:
             lines.append(f"Current Price: ${stock_data['current_price']:.2f}")
@@ -282,7 +282,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             lines = []
-            lines.append(f"<b>{stock_data['symbol']} - {stock_data['name']}</b>")
+            lines.append(f"<b>{stock_data['symbol']}</b>")
 
             if stock_data['current_price']:
                 lines.append(f"Current Price: ${stock_data['current_price']:.2f}")

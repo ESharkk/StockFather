@@ -106,7 +106,8 @@ class ChartService:
 
 
        # Plot candlestick chart for ALL timeframes
-       for idx, (date, row) in enumerate(data.iterrows()):
+       for idx in range(len(data)):
+           row = data.iloc[idx]
            # Determine color based on price movement
            if row['Close'] >= row['Open']:
                color = '#00d4aa'  # Green for bullish
@@ -257,7 +258,8 @@ class ChartService:
 
        # Plot volume as area chart
        volume_colors = []
-       for idx, row in data.iterrows():
+       for idx in range(len(data)):
+           row = data.iloc[idx]
            volume_colors.append('#00d4aa' if row['Close'] >= row['Open'] else '#ff6b6b')
 
 

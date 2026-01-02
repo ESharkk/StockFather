@@ -9,7 +9,7 @@ Educational purposes only. Not financial advice.
 # 1. Clone & setup
 
 
-git clone https://github.com/yourusername/StockFather.git
+git clone https://github.com/ESharkk/StockFather.git
 cd StockFather
 python -m venv venv
 
@@ -20,7 +20,7 @@ source venv/bin/activate
 
 # 3. Install & configure
 pip install -r requirements.txt
-cp .env
+mkdir .env
 # Edit .env with your Telegram Bot Token
 
 # 4. Run
