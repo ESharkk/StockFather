@@ -11,8 +11,6 @@ class ChartService:
        self._chart_cache = {}
        self.data_ttl = 300
        self.chart_ttl = 900
-
-
        # Pre-cache popular stocks
        self.popular_symbols = ["AAPL", "TSLA", "NVDA", "MSFT", "GOOGL", "AMZN", "META", "NFLX"]
 
@@ -38,7 +36,7 @@ class ChartService:
        elif period == "7d":
            data = ticker.history(period="7d", interval="1h")
        elif period == "30d":
-           data = ticker.history(period="1mo", interval="1d")
+           data = ticker.history(period="1mo", interval="1h")
        elif period == "3mo":
            data = ticker.history(period="3mo", interval="1d")
        elif period == "1y":
@@ -80,6 +78,11 @@ class ChartService:
        # Create figure
        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8),
                                       gridspec_kw={'height_ratios': [3, 1]})
+
+       if len(data) > 20:
+           data['SMA20'] = data['Close'].rolling(window=20).mean()
+           ax1.plot(range(len(data)), data['SMA20'], color='#f1c40f',
+                    linewidth=1.5, label='SMA 20', alpha=0.9)
 
 
        # Set style with better contrast
@@ -241,6 +244,14 @@ class ChartService:
 
 
            rotation = 0
+
+       last_price = data['Close'].iloc[-1]
+       change = ((last_price - data['Open'].iloc[0]) / data['Open'].iloc[0]) * 100
+       stats_text = f"Price: ${last_price:.2f}\nChange: {change:+.2f}%"
+
+       ax1.text(0.02, 0.95, stats_text, transform=ax1.transAxes,
+                verticalalignment='top', color='white', fontsize=10,
+                bbox=dict(boxstyle='round', facecolor='#1e1e3f', alpha=0.5))
 
 
        # Set light-colored labels for dark background
