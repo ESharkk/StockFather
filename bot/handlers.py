@@ -4,13 +4,13 @@ import concurrent.futures
 import json
 from pathlib import Path
 
-from telegram import Update
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from services.market import best_performers, worst_performers, get_stock_performance
 from charts.chartlar import chart_service
-from .keyboards import (
-    main_menu, timeframe_menu, limit_menu, results_menu,
-    search_stock_menu, search_prompt_menu, chart_period_menu
+from bot.keyboards import (
+    main_menu, search_prompt_menu, search_stock_menu, stock_result_menu,
+    chart_period_menu, timeframe_menu, limit_menu, results_menu
 )
 
 # Load S&P 500 symbols for validation
@@ -37,7 +37,7 @@ async def run_in_thread(func, *args, **kwargs):
 
 async def show_adaptive_progress(q, task_description, task_func, *args, **kwargs):
     start_time = time.time()
-    message = await q.edit_message_text(f"⏳ {task_description}")
+    message = await q.edit_message_text(f"⚡ {task_description}")
 
     time_task = asyncio.create_task(update_time_display(message, task_description, start_time))
 
@@ -53,7 +53,7 @@ async def show_adaptive_progress(q, task_description, task_func, *args, **kwargs
 
 
 async def update_time_display(message, task_description, start_time):
-    icons = ["⚡", "⏳", "🔄", "📊"]
+    icons = ["⚡", "⏳", "🔄"]
 
     while True:
         await asyncio.sleep(1)
@@ -84,11 +84,12 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = q.data
 
-    def is_photo_message():
-        return hasattr(q.message, 'photo') and q.message.photo
+    def is_photo_message(message):
+        """Check if message contains a photo"""
+        return message and (hasattr(message, 'photo') and message.photo)
 
     if data == "menu":
-        if is_photo_message():
+        if is_photo_message(q.message):  # FIXED
             await context.bot.send_message(
                 chat_id=q.message.chat_id,
                 text="📊 Stock Advisor Bot\n\nSelect an option:",
@@ -101,7 +102,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     elif data == "search":
-        if is_photo_message():
+        if is_photo_message(q.message):  # FIXED
             await context.bot.send_message(
                 chat_id=q.message.chat_id,
                 text="🔍 Stock Search\n\nEnter a stock symbol:",
@@ -116,7 +117,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data in ["best", "worst"]:
         action = "Best" if data == "best" else "Worst"
-        if is_photo_message():
+        if is_photo_message(q.message):  # FIXED
             await context.bot.send_message(
                 chat_id=q.message.chat_id,
                 text=f"📈 {action} Performers\n\nSelect timeframe:",
@@ -133,7 +134,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         action = "Best" if prefix == "best" else "Worst"
         period_text = {"24h": "Today", "7d": "7 Days", "30d": "30 Days", "3mo": "3 Months", "1y": "1 Year"}[period]
 
-        if is_photo_message():
+        if is_photo_message(q.message):  # FIXED
             await context.bot.send_message(
                 chat_id=q.message.chat_id,
                 text=f"📈 {action} Performers - {period_text}\n\nHow many stocks to show?",
@@ -184,39 +185,68 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=results_menu(prefix, period, limit)
         )
 
-    elif data.startswith("chart:") and data.count(":") == 1:
-        symbol = data.split(":")[1]
-        if is_photo_message():
+    # Chart type selection
+        # Chart type selection
+    elif data.startswith("chartselect:"):
+        # chartselect:price:symbol or chartselect:indicators:symbol
+        parts = data.split(":")
+        chart_type = parts[1]
+        symbol = parts[2]
+
+        chart_type_text = "Price & Volume" if chart_type == "price" else "RSI, MACD, ATR"
+
+        if is_photo_message(q.message):
             await context.bot.send_message(
                 chat_id=q.message.chat_id,
-                text=f"📊 {symbol} Chart\n\nSelect timeframe:",
-                reply_markup=chart_period_menu(symbol)
+                text=f"📊 {symbol} - {chart_type_text}\n\nSelect timeframe:",
+                reply_markup=chart_period_menu(symbol, chart_type)
             )
         else:
             await q.edit_message_text(
-                f"📊 {symbol} Chart\n\nSelect timeframe:",
-                reply_markup=chart_period_menu(symbol)
+                f"📊 {symbol} - {chart_type_text}\n\nSelect timeframe:",
+                reply_markup=chart_period_menu(symbol, chart_type)
             )
 
-    elif data.startswith("chart:") and data.count(":") == 2:
-        _, symbol, period = data.split(":")
+    # Chart generation (ALL timeframes including 30d)
+    elif data.startswith("chart:") and len(data.split(":")) == 4:
+        # chart:type:symbol:period
+        parts = data.split(":")
+        chart_type = parts[1]
+        symbol = parts[2]
+        period = parts[3]
 
-        image_bytes = chart_service.generate_price_chart(symbol, period)
-
-        if not image_bytes:
-            await context.bot.send_message(
-                chat_id=q.message.chat_id,
-                text=f"❌ Could not generate chart for {symbol}",
-                reply_markup=chart_period_menu(symbol)
-            )
-            return
-
-        await context.bot.send_photo(
+        # Show loading
+        loading_msg = await context.bot.send_message(
             chat_id=q.message.chat_id,
-            photo=image_bytes,
-            caption=f"📊 {symbol} - {period.upper()} Price Chart",
-            reply_markup=chart_period_menu(symbol)
+            text=f"📈 Generating {chart_type} chart for {symbol} ({period.upper()})..."
         )
+
+        # Generate chart
+        if chart_type == "price":
+            image_bytes = chart_service.generate_price_volume_chart(symbol, period)
+            chart_title = f"{symbol} - Price & Volume ({period.upper()})"
+        else:  # indicators
+            image_bytes = chart_service.generate_indicators_chart(symbol, period)
+            chart_title = f"{symbol} - RSI, MACD, ATR ({period.upper()})"
+
+        if image_bytes:
+            await loading_msg.delete()
+            await context.bot.send_photo(
+                chat_id=q.message.chat_id,
+                photo=image_bytes,
+                caption=chart_title,
+                reply_markup=chart_period_menu(symbol, chart_type)
+            )
+            if not is_photo_message(q.message):
+                try:
+                    await q.message.delete()
+                except:
+                    pass
+        else:
+            await loading_msg.edit_text(
+                text="❌ Could not generate chart. Please try again.",
+                reply_markup=stock_result_menu(symbol, has_chart=False)
+            )
 
     elif data.startswith("stock_back:"):
         symbol = data.split(":")[1]

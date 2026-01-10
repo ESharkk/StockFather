@@ -4,7 +4,7 @@ def main_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📈 Best Performers", callback_data="best")],
         [InlineKeyboardButton("📉 Worst Performers", callback_data="worst")],
-        [InlineKeyboardButton("🔍 Search", callback_data="search")],
+        [InlineKeyboardButton("🔍 Search and Charts", callback_data="search")],
     ])
 
 def search_prompt_menu():
@@ -13,14 +13,15 @@ def search_prompt_menu():
         [InlineKeyboardButton("🏠 Home", callback_data="menu")]
     ])
 
+
 def search_stock_menu(symbol):
-    """Menu after showing stock performance - ADD CHART BUTTON"""
-    # Make sure symbol doesn't have callback_data issues
+    """Menu after showing stock performance"""
     clean_symbol = symbol.replace('$', '') if '$' in symbol else symbol
 
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📊 View Chart", callback_data=f"chart:{clean_symbol}"),
+            InlineKeyboardButton("📊 Price and Vol", callback_data=f"chartselect:price:{clean_symbol}"),
+            InlineKeyboardButton("📈 RSI, MACD, ATR", callback_data=f"chartselect:indicators:{clean_symbol}"),
         ],
         [
             InlineKeyboardButton("🔍 Search Another", callback_data="search"),
@@ -28,38 +29,41 @@ def search_stock_menu(symbol):
         ]
     ])
 
-# keyboards.py - Add chart button
+
 def stock_result_menu(symbol, has_chart=True):
-    """Menu after showing stock performance"""
+    """Menu after showing stock performance - same as above"""
     buttons = []
 
     if has_chart:
         buttons.append([
-            InlineKeyboardButton("📊 View Chart", callback_data=f"chart:{symbol}:30d"),
+            InlineKeyboardButton("📊 Price and Vol", callback_data=f"chartselect:price:{symbol}"),
+            InlineKeyboardButton("📈 RSI, MACD, ATR", callback_data=f"chartselect:indicators:{symbol}"),
         ])
 
     buttons.append([
-        InlineKeyboardButton("🔄 Change Time", callback_data=f"search"),
+        InlineKeyboardButton("🔍 Search Another", callback_data="search"),
         InlineKeyboardButton("🏠 Home", callback_data="menu"),
     ])
 
     return InlineKeyboardMarkup(buttons)
 
 
-def chart_period_menu(symbol):
-    """Select chart timeframe"""
+def chart_period_menu(symbol, chart_type="price"):
+    """Select chart timeframe - MUST include chart_type"""
+    chart_type_text = "Price & Volume" if chart_type == "price" else "RSI, MACD, ATR"
+
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("1D", callback_data=f"chart:{symbol}:1d"),
-            InlineKeyboardButton("7D", callback_data=f"chart:{symbol}:7d"),
-            InlineKeyboardButton("30D", callback_data=f"chart:{symbol}:30d"),
+            InlineKeyboardButton("1D", callback_data=f"chart:{chart_type}:{symbol}:1d"),
+            InlineKeyboardButton("7D", callback_data=f"chart:{chart_type}:{symbol}:7d"),
+            InlineKeyboardButton("30D", callback_data=f"chart:{chart_type}:{symbol}:30d"),
         ],
         [
-            InlineKeyboardButton("3M", callback_data=f"chart:{symbol}:3mo"),
-            InlineKeyboardButton("1Y", callback_data=f"chart:{symbol}:1y"),
+            InlineKeyboardButton("3M", callback_data=f"chart:{chart_type}:{symbol}:3mo"),
+            InlineKeyboardButton("1Y", callback_data=f"chart:{chart_type}:{symbol}:1y"),
         ],
         [
-            InlineKeyboardButton("← Back", callback_data=f"stock_back:{symbol}"),
+            InlineKeyboardButton("◀️ Back", callback_data=f"stock_back:{symbol}"),
             InlineKeyboardButton("🏠 Home", callback_data="menu"),
         ]
     ])
