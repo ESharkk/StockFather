@@ -27,7 +27,7 @@ mkdir .env
 python main.py
 
 
-``` 
+```
 📦 Features
 Real-time Charts: Candlestick charts (1D, 7D, 30D, 3M, 1Y)
 
@@ -64,4 +64,3 @@ Telegram Bot Token (from @BotFather)
   - `.env` - Environment variables
   - `.gitignore` - Git ignore rules
   - `README.md` - This file
-

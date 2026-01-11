@@ -1,9 +1,10 @@
-import time
-import threading
 import concurrent.futures
-from typing import Dict, List, Optional
+import threading
+import time
+from typing import Any, Dict, List, Optional, TypedDict
 
 import yfinance as yf
+
 from services.universe import load_sp500
 
 UNIVERSE = load_sp500()[:50]
@@ -12,15 +13,21 @@ MAX_WORKERS = 8
 CACHE_TTL = 300  # seconds
 
 
-_history_cache: Dict[str, Dict] = {}
+class PerformanceResult(TypedDict):
+    symbol: str
+    change: Optional[float]
+
+
+_history_cache: Dict[str, Any] = {}
 _history_cache_time: Dict[str, float] = {}
 
-_result_cache: Dict[str, Dict] = {}
+_result_cache: Dict[str, List[PerformanceResult]] = {}
 _result_cache_time: Dict[str, float] = {}
 
 _cache_lock = threading.Lock()
 
-def _fetch_history(symbol: str):
+
+def _fetch_history(symbol: str) -> Any:
     """
     Fetch 1Y historical data for a symbol.
     One network request per symbol.
@@ -29,7 +36,7 @@ def _fetch_history(symbol: str):
     return ticker.history(period="1y", auto_adjust=True)
 
 
-def _get_history_cached(symbol: str):
+def _get_history_cached(symbol: str) -> Any:
     now = time.time()
 
     with _cache_lock:
@@ -67,15 +74,11 @@ def compute_performance(hist) -> Dict[str, Optional[float]]:
     }
 
 
-
-def _fetch_all_symbols(symbols: List[str]) -> List[Dict]:
+def _fetch_all_symbols(symbols: List[str]) -> List[Dict[str, Any]]:
     results = []
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {
-            executor.submit(_get_history_cached, symbol): symbol
-            for symbol in symbols
-        }
+        futures = {executor.submit(_get_history_cached, symbol): symbol for symbol in symbols}
 
         for future in concurrent.futures.as_completed(futures):
             symbol = futures[future]
@@ -84,10 +87,7 @@ def _fetch_all_symbols(symbols: List[str]) -> List[Dict]:
                 perf = compute_performance(hist)
 
                 if perf:
-                    results.append({
-                        "symbol": symbol,
-                        "performance": perf
-                    })
+                    results.append({"symbol": symbol, "performance": perf})
 
             except Exception as e:
                 print(f"{symbol} failed: {e}")
@@ -95,7 +95,7 @@ def _fetch_all_symbols(symbols: List[str]) -> List[Dict]:
     return results
 
 
-def best_performers(period: str, limit: int = 5) -> List[Dict]:
+def best_performers(period: str, limit: int = 5) -> List[PerformanceResult]:
     key = f"best:{period}:{limit}"
     now = time.time()
 
@@ -104,13 +104,18 @@ def best_performers(period: str, limit: int = 5) -> List[Dict]:
 
     data = _fetch_all_symbols(UNIVERSE)
 
-    filtered = [
-        {"symbol": d["symbol"], "change": d["performance"].get(period)}
+    filtered: List[PerformanceResult] = [
+        PerformanceResult(symbol=d["symbol"], change=d["performance"].get(period))
         for d in data
         if d["performance"].get(period) is not None
     ]
 
-    result = sorted(filtered, key=lambda x: x["change"], reverse=True)[:limit]
+    # FIX: Use a key that always returns a float
+    result = sorted(
+        filtered,
+        key=lambda x: x["change"] if x["change"] is not None else float("-inf"),
+        reverse=True,
+    )[:limit]
 
     _result_cache[key] = result
     _result_cache_time[key] = now
@@ -118,7 +123,7 @@ def best_performers(period: str, limit: int = 5) -> List[Dict]:
     return result
 
 
-def worst_performers(period: str, limit: int = 5) -> List[Dict]:
+def worst_performers(period: str, limit: int = 5) -> List[PerformanceResult]:
     key = f"worst:{period}:{limit}"
     now = time.time()
 
@@ -127,13 +132,16 @@ def worst_performers(period: str, limit: int = 5) -> List[Dict]:
 
     data = _fetch_all_symbols(UNIVERSE)
 
-    filtered = [
-        {"symbol": d["symbol"], "change": d["performance"].get(period)}
+    filtered: List[PerformanceResult] = [
+        PerformanceResult(symbol=d["symbol"], change=d["performance"].get(period))
         for d in data
         if d["performance"].get(period) is not None
     ]
 
-    result = sorted(filtered, key=lambda x: x["change"])[:limit]
+    # FIX: Use a key that always returns a float
+    result = sorted(
+        filtered, key=lambda x: x["change"] if x["change"] is not None else float("inf")
+    )[:limit]
 
     _result_cache[key] = result
     _result_cache_time[key] = now
@@ -141,7 +149,7 @@ def worst_performers(period: str, limit: int = 5) -> List[Dict]:
     return result
 
 
-def get_stock_performance(symbol: str) -> Optional[Dict]:
+def get_stock_performance(symbol: str) -> Optional[Dict[str, Any]]:
     try:
         hist = _get_history_cached(symbol)
         if hist.empty:
@@ -152,12 +160,13 @@ def get_stock_performance(symbol: str) -> Optional[Dict]:
         return {
             "symbol": symbol.upper(),
             "current_price": round(float(close), 2),
-            "performances": compute_performance(hist)
+            "performances": compute_performance(hist),
         }
 
     except Exception as e:
         print(f"{symbol} error: {e}")
         return None
+
 
 def start_cache_warming():
     def warm():

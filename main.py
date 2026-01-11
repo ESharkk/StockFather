@@ -1,11 +1,18 @@
 import os
+
 from dotenv import load_dotenv
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters
-from bot import start, on_button, handle_message
+from telegram.ext import (
+    ApplicationBuilder,
+    CallbackQueryHandler,
+    CommandHandler,
+    MessageHandler,
+    filters,
+)
+
+from bot import handle_message, on_button, start
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
 
 
 def main():

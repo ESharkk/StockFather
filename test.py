@@ -1,5 +1,6 @@
-import yfinance as yf
 import time
+
+import yfinance as yf
 
 print("Testing Yahoo Finance...")
 time.sleep(2)

@@ -1,22 +1,29 @@
 import asyncio
-import time
 import concurrent.futures
 import json
+import time
 from pathlib import Path
 
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update
 from telegram.ext import ContextTypes
-from services.market import best_performers, worst_performers, get_stock_performance
-from charts.chartlar import chart_service
+
 from bot.keyboards import (
-    main_menu, search_prompt_menu, search_stock_menu, stock_result_menu,
-    chart_period_menu, timeframe_menu, limit_menu, results_menu
+    chart_period_menu,
+    limit_menu,
+    main_menu,
+    results_menu,
+    search_prompt_menu,
+    search_stock_menu,
+    stock_result_menu,
+    timeframe_menu,
 )
+from charts.chartlar import chart_service
+from services.market import best_performers, get_stock_performance, worst_performers
 
 # Load S&P 500 symbols for validation
 SP500_FILE = Path("cache") / "sp500.json"
 if SP500_FILE.exists():
-    with open(SP500_FILE, 'r') as f:
+    with open(SP500_FILE, "r") as f:
         VALID_SYMBOLS = set(json.load(f))
 else:
     VALID_SYMBOLS = set()
@@ -25,7 +32,7 @@ else:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📊 Stock Advisor Bot\n\nWelcome! Use the buttons to explore the market.\n⚠️ Not financial advice.",
-        reply_markup=main_menu()
+        reply_markup=main_menu(),
     )
 
 
@@ -86,19 +93,18 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     def is_photo_message(message):
         """Check if message contains a photo"""
-        return message and (hasattr(message, 'photo') and message.photo)
+        return message and (hasattr(message, "photo") and message.photo)
 
     if data == "menu":
         if is_photo_message(q.message):  # FIXED
             await context.bot.send_message(
                 chat_id=q.message.chat_id,
                 text="📊 Stock Advisor Bot\n\nSelect an option:",
-                reply_markup=main_menu()
+                reply_markup=main_menu(),
             )
         else:
             await q.edit_message_text(
-                "📊 Stock Advisor Bot\n\nSelect an option:",
-                reply_markup=main_menu()
+                "📊 Stock Advisor Bot\n\nSelect an option:", reply_markup=main_menu()
             )
 
     elif data == "search":
@@ -106,14 +112,13 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=q.message.chat_id,
                 text="🔍 Stock Search\n\nEnter a stock symbol:",
-                reply_markup=search_prompt_menu()
+                reply_markup=search_prompt_menu(),
             )
         else:
             await q.edit_message_text(
-                "🔍 Stock Search\n\nEnter a stock symbol:",
-                reply_markup=search_prompt_menu()
+                "🔍 Stock Search\n\nEnter a stock symbol:", reply_markup=search_prompt_menu()
             )
-        context.user_data['awaiting_stock'] = True
+        context.user_data["awaiting_stock"] = True
 
     elif data in ["best", "worst"]:
         action = "Best" if data == "best" else "Worst"
@@ -121,36 +126,47 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=q.message.chat_id,
                 text=f"📈 {action} Performers\n\nSelect timeframe:",
-                reply_markup=timeframe_menu(data)
+                reply_markup=timeframe_menu(data),
             )
         else:
             await q.edit_message_text(
-                f"📈 {action} Performers\n\nSelect timeframe:",
-                reply_markup=timeframe_menu(data)
+                f"📈 {action} Performers\n\nSelect timeframe:", reply_markup=timeframe_menu(data)
             )
 
     elif data.count("_") == 1 and data.endswith(("_24h", "_7d", "_30d", "_3mo", "_1y")):
         prefix, period = data.split("_")
         action = "Best" if prefix == "best" else "Worst"
-        period_text = {"24h": "Today", "7d": "7 Days", "30d": "30 Days", "3mo": "3 Months", "1y": "1 Year"}[period]
+        period_text = {
+            "24h": "Today",
+            "7d": "7 Days",
+            "30d": "30 Days",
+            "3mo": "3 Months",
+            "1y": "1 Year",
+        }[period]
 
         if is_photo_message(q.message):  # FIXED
             await context.bot.send_message(
                 chat_id=q.message.chat_id,
                 text=f"📈 {action} Performers - {period_text}\n\nHow many stocks to show?",
-                reply_markup=limit_menu(prefix, period)
+                reply_markup=limit_menu(prefix, period),
             )
         else:
             await q.edit_message_text(
                 f"📈 {action} Performers - {period_text}\n\nHow many stocks to show?",
-                reply_markup=limit_menu(prefix, period)
+                reply_markup=limit_menu(prefix, period),
             )
 
     elif data.count("_") == 2:
         prefix, period, limit_str = data.split("_")
         limit = int(limit_str)
 
-        period_text = {"24h": "Today", "7d": "7 Days", "30d": "30 Days", "3mo": "3 Months", "1y": "1 Year"}[period]
+        period_text = {
+            "24h": "Today",
+            "7d": "7 Days",
+            "30d": "30 Days",
+            "3mo": "3 Months",
+            "1y": "1 Year",
+        }[period]
 
         async def fetch_performers():
             if prefix == "best":
@@ -161,32 +177,27 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return results, "📉 Bottom"
 
         (results, title), progress_msg = await show_adaptive_progress(
-            q,
-            f"Fetching {period_text} performers",
-            fetch_performers
+            q, f"Fetching {period_text} performers", fetch_performers
         )
 
         if not results:
             await progress_msg.edit_text(
                 f"❌ No data available for {period_text} period.",
-                reply_markup=timeframe_menu(prefix)
+                reply_markup=timeframe_menu(prefix),
             )
             return
 
         lines = []
         for i, item in enumerate(results, 1):
-            change_icon = "🟢" if item['change'] >= 0 else "🔴"
+            change_icon = "🟢" if item["change"] >= 0 else "🔴"
             lines.append(f"{i}. {change_icon} {item['symbol']}: {item['change']:+}%")
 
         text = f"{title} {limit} Performers ({period_text})\n\n" + "\n".join(lines)
 
-        await progress_msg.edit_text(
-            text,
-            reply_markup=results_menu(prefix, period, limit)
-        )
+        await progress_msg.edit_text(text, reply_markup=results_menu(prefix, period, limit))
 
     # Chart type selection
-        # Chart type selection
+    # Chart type selection
     elif data.startswith("chartselect:"):
         # chartselect:price:symbol or chartselect:indicators:symbol
         parts = data.split(":")
@@ -199,12 +210,12 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=q.message.chat_id,
                 text=f"📊 {symbol} - {chart_type_text}\n\nSelect timeframe:",
-                reply_markup=chart_period_menu(symbol, chart_type)
+                reply_markup=chart_period_menu(symbol, chart_type),
             )
         else:
             await q.edit_message_text(
                 f"📊 {symbol} - {chart_type_text}\n\nSelect timeframe:",
-                reply_markup=chart_period_menu(symbol, chart_type)
+                reply_markup=chart_period_menu(symbol, chart_type),
             )
 
     # Chart generation (ALL timeframes including 30d)
@@ -218,7 +229,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Show loading
         loading_msg = await context.bot.send_message(
             chat_id=q.message.chat_id,
-            text=f"📈 Generating {chart_type} chart for {symbol} ({period.upper()})..."
+            text=f"📈 Generating {chart_type} chart for {symbol} ({period.upper()})...",
         )
 
         # Generate chart
@@ -235,17 +246,14 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=q.message.chat_id,
                 photo=image_bytes,
                 caption=chart_title,
-                reply_markup=chart_period_menu(symbol, chart_type)
+                reply_markup=chart_period_menu(symbol, chart_type),
             )
             if not is_photo_message(q.message):
-                try:
-                    await q.message.delete()
-                except:
-                    pass
+                await q.message.delete()
         else:
             await loading_msg.edit_text(
                 text="❌ Could not generate chart. Please try again.",
-                reply_markup=stock_result_menu(symbol, has_chart=False)
+                reply_markup=stock_result_menu(symbol, has_chart=False),
             )
 
     elif data.startswith("stock_back:"):
@@ -257,26 +265,38 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=q.message.chat_id,
                 text=f"❌ Could not find data for {symbol}",
-                reply_markup=main_menu()
+                reply_markup=main_menu(),
             )
             return
 
         lines = []
         lines.append(f"<b>{stock_data['symbol']}</b>")
 
-        if stock_data['current_price']:
+        if stock_data["current_price"]:
             lines.append(f"Current Price: ${stock_data['current_price']:.2f}")
 
         lines.append("")
 
-        performances = stock_data['performances']
+        performances = stock_data["performances"]
         for p, change in performances.items():
             if change is not None:
-                p_text = {"24h": "24 Hours", "7d": "7 Days", "30d": "30 Days", "3mo": "3 Months", "1y": "1 Year"}[p]
+                p_text = {
+                    "24h": "24 Hours",
+                    "7d": "7 Days",
+                    "30d": "30 Days",
+                    "3mo": "3 Months",
+                    "1y": "1 Year",
+                }[p]
                 change_icon = "🟢" if change >= 0 else "🔴"
                 lines.append(f"{change_icon} {p_text}: {change:+}%")
             else:
-                p_text = {"24h": "24 Hours", "7d": "7 Days", "30d": "30 Days", "3mo": "3 Months", "1y": "1 Year"}[p]
+                p_text = {
+                    "24h": "24 Hours",
+                    "7d": "7 Days",
+                    "30d": "30 Days",
+                    "3mo": "3 Months",
+                    "1y": "1 Year",
+                }[p]
                 lines.append(f"⭕ {p_text}: No data")
 
         text = "\n".join(lines)
@@ -284,57 +304,66 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(
             chat_id=q.message.chat_id,
             text=text,
-            parse_mode='HTML',
-            reply_markup=search_stock_menu(symbol)
+            parse_mode="HTML",
+            reply_markup=search_stock_menu(symbol),
         )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle regular messages for stock search"""
-    if context.user_data.get('awaiting_stock'):
+    if context.user_data.get("awaiting_stock"):
         symbol = update.message.text.upper().strip()
 
         # Quick validation using S&P 500 list
         if VALID_SYMBOLS and symbol not in VALID_SYMBOLS:
             await update.message.reply_text(
                 f"❌ {symbol} not found in S&P 500. Try symbols like AAPL, MSFT, TSLA.",
-                reply_markup=main_menu()
+                reply_markup=main_menu(),
             )
-            context.user_data['awaiting_stock'] = False
+            context.user_data["awaiting_stock"] = False
             return
 
         stock_data = get_stock_performance(symbol)
 
         if not stock_data:
             await update.message.reply_text(
-                f"❌ Could not find data for {symbol}.",
-                reply_markup=main_menu()
+                f"❌ Could not find data for {symbol}.", reply_markup=main_menu()
             )
         else:
             lines = []
             lines.append(f"<b>{stock_data['symbol']}</b>")
 
-            if stock_data['current_price']:
+            if stock_data["current_price"]:
                 lines.append(f"Current Price: ${stock_data['current_price']:.2f}")
 
             lines.append("")
 
-            performances = stock_data['performances']
+            performances = stock_data["performances"]
             for period, change in performances.items():
                 if change is not None:
-                    period_text = {"24h": "24 Hours", "7d": "7 Days", "30d": "30 Days", "3mo": "3 Months", "1y": "1 Year"}[period]
+                    period_text = {
+                        "24h": "24 Hours",
+                        "7d": "7 Days",
+                        "30d": "30 Days",
+                        "3mo": "3 Months",
+                        "1y": "1 Year",
+                    }[period]
                     change_icon = "🟢" if change >= 0 else "🔴"
                     lines.append(f"{change_icon} {period_text}: {change:+}%")
                 else:
-                    period_text = {"24h": "24 Hours", "7d": "7 Days", "30d": "30 Days", "3mo": "3 Months", "1y": "1 Year"}[period]
+                    period_text = {
+                        "24h": "24 Hours",
+                        "7d": "7 Days",
+                        "30d": "30 Days",
+                        "3mo": "3 Months",
+                        "1y": "1 Year",
+                    }[period]
                     lines.append(f"⭕ {period_text}: No data")
 
             text = "\n".join(lines)
 
             await update.message.reply_text(
-                text,
-                parse_mode='HTML',
-                reply_markup=search_stock_menu(symbol)
+                text, parse_mode="HTML", reply_markup=search_stock_menu(symbol)
             )
 
-        context.user_data['awaiting_stock'] = False
+        context.user_data["awaiting_stock"] = False

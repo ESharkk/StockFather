@@ -102,3 +102,25 @@ ehthumbs.db
 *.sqlite
 *.sqlite3
 .env
+
+# MyPy type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Black/isort cache
+.cache/black/
+.cache/isort/
+
+# Jupyter notebooks
+.ipynb_checkpoints/
+
+# Coverage reports
+.coverage
+.coverage.*
+cover/
+*.cover
+.hypothesis/
+
+# Pyre type checker
+.pyre/
